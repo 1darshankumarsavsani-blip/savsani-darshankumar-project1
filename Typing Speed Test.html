@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Typing Speed Test</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root {
+      --bg: #0f172a;
+      --panel: #111827;
+      --text: #e5e7eb;
+      --muted: #9ca3af;
+      --accent: #38bdf8;
+      --ok: #22c55e;
+      --bad: #ef4444;
+      --warn: #f59e0b;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial;
+      background: linear-gradient(120deg, #0b1020, #0f172a 40%, #0b1020 100%);
+      color: var(--text);
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      padding: 24px;
+    }
+    .container {
+      width: 100%;
+      max-width: 860px;
+      background: var(--panel);
+      border: 1px solid #1f2937;
+      border-radius: 16px;
+      padding: 24px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.35);
+    }
+    h1 {
+      margin: 0 0 8px;
+      font-weight: 800;
+      letter-spacing: 0.2px;
+    }
+    .sub {
+      color: var(--muted);
+      margin-bottom: 16px;
+    }
+    .toolbar {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-bottom: 16px;
+    }
+    button {
+      background: var(--accent);
+      color: #06283d;
+      font-weight: 700;
+      border: none;
+      padding: 10px 16px;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: transform 0.08s ease, filter 0.2s ease;
+    }
+    button:hover { filter: brightness(1.08); }
+    button:active { transform: translateY(1px); }
+    .select {
+      background: #0b1730;
+      border: 1px solid #233151;
+      color: var(--text);
+      padding: 8px 12px;
+      border-radius: 10px;
+    }
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+      margin-top: 8px;
+    }
+    .card {
+      background: #0c1325;
+      border: 1px solid #1f2d4a;
+      border-radius: 12px;
+      padding: 12px;
+    }
+    .label { color: var(--muted); font-size: 12px; }
+    .value { font-size: 20px; font-weight: 800; margin-top: 4px; }
+    .target {
+      background: #0b1324;
+      border: 1px solid #1f2937;
+      border-radius: 12px;
+      padding: 16px;
+      line-height: 1.7;
+      font-size: 18px;
+      user-select: none;
+      min-height: 88px;
+    }
+    .char { padding: 1px 0; }
+    .char.ok { color: var(--ok); }
+    .char.bad { color: var(--bad); text-decoration: underline wavy var(--bad); }
+    .char.next { background: rgba(56, 189, 248, 0.15); border-radius: 4px; }
+    textarea {
+      width: 100%;
+      margin-top: 12px;
+      background: #0b1730;
+      border: 1px solid #233151;
+      color: var(--text);
+      padding: 12px;
+      border-radius: 12px;
+      resize: none;
+      height: 120px;
+      outline: none;
+      font-size: 16px;
+    }
+    .footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 12px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .hint { color: var(--warn); }
+    .hidden { display: none; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Typing Speed Test</h1>
+    <p class="sub">Random words, live accuracy, WPM, and timer. Learn timers + string comparison.</p>
+
+    <div class="toolbar">
+      <button id="btnStart">Start</button>
+      <button id="btnReset">Reset</button>
+      <select id="wordCount" class="select" title="Word count">
+        <option value="20">20 words</option>
+        <option value="30" selected>30 words</option>
+        <option value="40">40 words</option>
+      </select>
+      <select id="dictionary" class="select" title="Dictionary">
+        <option value="en" selected>English</option>
+        <option value="gu">Gujarati (Latin)</option>
+        <option value="mix">Mix</option>
+      </select>
+    </div>
+
+    <div id="target" class="target"></div>
+
+    <textarea id="input" placeholder="Start typing here..." disabled></textarea>
+
+    <div class="stats">
+      <div class="card">
+        <div class="label">Time</div>
+        <div class="value" id="time">00.00 s</div>
+      </div>
+      <div class="card">
+        <div class="label">Accuracy</div>
+        <div class="value" id="acc">0%</div>
+      </div>
+      <div class="card">
+        <div class="label">WPM</div>
+        <div class="value" id="wpm">0</div>
+      </div>
+      <div class="card">
+        <div class="label">Progress</div>
+        <div class="value" id="progress">0%</div>
+      </div>
+    </div>
+
+    <div class="footer">
+      <div>
+        <span class="hint">Tip:</span> Type exactly as shown. Spaces and punctuation matter.
+      </div>
+      <div id="doneMsg" class="hidden">Complete! Press Start to try again.</div>
+    </div>
+  </div>
+
+  <script>
+    // --- Word banks ---
+    const EN_WORDS = [
+      "network","packet","router","switch","protocol","client","server","buffer","thread","compile",
+      "variable","function","array","logic","binary","stack","queue","driver","module","port",
+      "socket","request","response","cache","kernel","system","process","debug","design","build",
+      "virtual","memory","branch","loop","class","object","method","string","number","event",
+      "random","timer","compare","hash","status","error","success","secure","update","version"
+    ];
+
+    const GU_WORDS_LATIN = [
+      "samay","veg","sacho","galat","shabdo","typing","pariksha","saras","jhadpi","pramanik",
+      "ganatri","mulyankan","pratishat","kshamata","abhyas","lakshya","josh","mehnat","siddhi","paghlu",
+      "shuruaat","ant","barobar","fark","gati","saral","mushkil","vidhyarthi","engineer","project",
+      "computer","network","data","suchi","suniyojan","kary","safalta","prayatna","shakti","vishvas",
+      "seekho","karo","badlo","vichar","uddishya","majboot","sankalp","aag","prerna","vijay"
+    ];
+
+    const MIX_WORDS = [
+      "focus","samay","compile","abhyas","protocol","sacho","router","veg","accuracy","ganatri",
+      "packet","shabdo","code","pariksha","string","pratishat","logic","kshamata","timer","mehnat",
+      "design","safalta","debug","prayatna","switch","lakshya","class","vishvas","socket","project"
+    ];
+
+    // --- Elements ---
+    const elTarget = document.getElementById("target");
+    const elInput  = document.getElementById("input");
+    const elStart  = document.getElementById("btnStart");
+    const elReset  = document.getElementById("btnReset");
+    const elTime   = document.getElementById("time");
+    const elAcc    = document.getElementById("acc");
+    const elWPM    = document.getElementById("wpm");
+    const elProgress = document.getElementById("progress");
+    const elWordCount = document.getElementById("wordCount");
+    const elDictionary = document.getElementById("dictionary");
+    const elDone = document.getElementById("doneMsg");
+
+    // --- State ---
+    let targetText = "";
+    let startTime = null;
+    let timerId = null;
+    let finished = false;
+
+    // --- Helpers ---
+    function pickWords(dict, count) {
+      const source = dict === "gu" ? GU_WORDS_LATIN : dict === "mix" ? MIX_WORDS : EN_WORDS;
+      const pool = [...source];
+      // Fisher–Yates shuffle
+      for (let i = pool.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [pool[i], pool[j]] = [pool[j], pool[i]];
+      }
+      return pool.slice(0, count).join(" ");
+    }
+
+    function renderTarget(text, typed) {
+      elTarget.innerHTML = ""; // clear
+      const len = text.length;
+      for (let i = 0; i < len; i++) {
+        const span = document.createElement("span");
+        span.className = "char";
+        const tChar = text[i];
+        const uChar = typed[i];
+
+        if (uChar == null) {
+          span.textContent = tChar;
+          if (i === typed.length) span.classList.add("next");
+        } else if (uChar === tChar) {
+          span.textContent = tChar;
+          span.classList.add("ok");
+        } else {
+          span.textContent = tChar;
+          span.classList.add("bad");
+        }
+        elTarget.appendChild(span);
+      }
+    }
+
+    function formatTime(ms) {
+      return (ms / 1000).toFixed(2) + " s";
+    }
+
+    function computeStats(text, typed, elapsedMs) {
+      const totalTyped = typed.length;
+      let correctChars = 0;
+      for (let i = 0; i < totalTyped; i++) {
+        if (typed[i] === text[i]) correctChars++;
+      }
+      const accuracy = totalTyped === 0 ? 0 : Math.round((correctChars / totalTyped) * 100);
+      const minutes = elapsedMs > 0 ? (elapsedMs / 1000) / 60 : 0;
+      const wpm = minutes > 0 ? Math.round((correctChars / 5) / minutes) : 0;
+      const progress = Math.round(Math.min(100, (totalTyped / text.length) * 100));
+      return { accuracy, wpm, progress, correctChars, totalTyped };
+    }
+
+    function startTest() {
+      finished = false;
+      elDone.classList.add("hidden");
+      elInput.value = "";
+      targetText = pickWords(elDictionary.value, parseInt(elWordCount.value));
+      renderTarget(targetText, "");
+      elInput.disabled = false;
+      elInput.focus();
+      startTime = null;
+      elTime.textContent = "00.00 s";
+      elAcc.textContent = "0%";
+      elWPM.textContent = "0";
+      elProgress.textContent = "0%";
+      if (timerId) { clearInterval(timerId); timerId = null; }
+
+      // Start timer on first keystroke for fairness
+      elInput.oninput = handleInput;
+      elInput.onkeydown = (e) => {
+        if (!startTime && e.key.length === 1 || e.key === "Backspace" || e.key === "Space") {
+          startTime = Date.now();
+          timerId = setInterval(updateTimer, 50);
+        }
+      };
+    }
+
+    function updateTimer() {
+      if (!startTime) return;
+      const now = Date.now();
+      elTime.textContent = formatTime(now - startTime);
+    }
+
+    function finishTest() {
+      finished = true;
+      elInput.disabled = true;
+      if (timerId) { clearInterval(timerId); timerId = null; }
+      elDone.classList.remove("hidden");
+    }
+
+    function handleInput() {
+      const typed = elInput.value;
+      renderTarget(targetText, typed);
+
+      const elapsed = startTime ? (Date.now() - startTime) : 0;
+      const stats = computeStats(targetText, typed, elapsed);
+
+      elAcc.textContent = stats.accuracy + "%";
+      elWPM.textContent = stats.wpm.toString();
+      elProgress.textContent = stats.progress + "%";
+
+      // Auto-finish when all characters are entered
+      if (!finished && typed.length >= targetText.length) {
+        finishTest();
+      }
+    }
+
+    function resetTest() {
+      if (timerId) { clearInterval(timerId); timerId = null; }
+      elInput.value = "";
+      elInput.disabled = true;
+      elTarget.textContent = "";
+      elTime.textContent = "00.00 s";
+      elAcc.textContent = "0%";
+      elWPM.textContent = "0";
+      elProgress.textContent = "0%";
+      elDone.classList.add("hidden");
+      startTime = null;
+      finished = false;
+    }
+
+    // --- Bindings ---
+    elStart.addEventListener("click", startTest);
+    elReset.addEventListener("click", resetTest);
+
+    // Generate initial prompt
+    resetTest();
+  </script>
+</body>
+</html>
