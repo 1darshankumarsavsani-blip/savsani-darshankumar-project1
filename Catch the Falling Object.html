@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Catch the Falling Object</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <style>
+    :root {
+      --bg: #0f172a;
+      --panel: #111827;
+      --accent: #22c55e;
+      --miss: #ef4444;
+      --text: #e5e7eb;
+      --basket: #f59e0b;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; background: linear-gradient(180deg, #0f172a, #1f2937);
+      color: var(--text); font-family: system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, sans-serif;
+      display: flex; align-items: center; justify-content: center; min-height: 100vh;
+    }
+    .container {
+      width: 360px; max-width: 95vw;
+      background: rgba(17, 24, 39, 0.75);
+      border: 1px solid #374151; border-radius: 12px; backdrop-filter: blur(6px);
+      box-shadow: 0 10px 30px rgba(0,0,0,0.35);
+      overflow: hidden;
+    }
+    .header {
+      padding: 12px 16px; display: flex; align-items: center; justify-content: space-between;
+      background: #0b1020; border-bottom: 1px solid #1f2937;
+    }
+    .title { font-weight: 700; letter-spacing: 0.2px; }
+    .scoreboard { display: flex; gap: 10px; font-size: 14px; }
+    .score, .misses, .level { padding: 4px 8px; border-radius: 8px; background: #111827; border: 1px solid #253046; }
+    .game {
+      position: relative; width: 100%; height: 520px; background: radial-gradient(1200px 500px at 50% -100px, #0ea5e9 0%, rgba(14,165,233,0.05) 45%, transparent 70%) no-repeat;
+      overflow: hidden;
+    }
+    .ground {
+      position: absolute; bottom: 0; left: 0; right: 0; height: 62px;
+      background: linear-gradient(0deg, #0b1327, #0f172a);
+      border-top: 1px solid #1f2937;
+    }
+    .basket {
+      position: absolute; bottom: 62px; width: 90px; height: 22px;
+      background: linear-gradient(180deg, #fbbf24, var(--basket));
+      border: 2px solid #b45309; border-radius: 6px;
+      box-shadow: 0 6px 14px rgba(245, 158, 11, 0.25);
+    }
+    .basket::after {
+      content: ""; position: absolute; left: 8px; right: 8px; top: -10px; height: 10px;
+      border: 2px solid #b45309; border-bottom: none; border-radius: 8px 8px 0 0;
+      background: rgba(251,191,36,0.15);
+    }
+    .obj {
+      position: absolute; top: -40px; width: 36px; height: 36px; border-radius: 50%;
+      display: grid; place-items: center; font-size: 20px; user-select: none;
+      box-shadow: 0 10px 18px rgba(0,0,0,0.25);
+      animation: spin 2.8s linear infinite;
+    }
+    @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+    .btns {
+      display: flex; gap: 8px; padding: 10px 12px; background: #0b1020; border-top: 1px solid #1f2937;
+    }
+    button {
+      flex: 1; padding: 10px 12px; color: var(--text); background: #0f172a; border: 1px solid #334155;
+      border-radius: 8px; cursor: pointer; font-weight: 600;
+    }
+    button:hover { border-color: #60a5fa; }
+    .toast {
+      position: absolute; top: 12px; left: 50%; transform: translateX(-50%);
+      background: rgba(17,24,39,0.9); border: 1px solid #334155; padding: 8px 12px; border-radius: 8px;
+      font-size: 14px; pointer-events: none; opacity: 0; transition: opacity 240ms ease;
+    }
+    .toast.show { opacity: 1; }
+    .positive { color: var(--accent); }
+    .negative { color: var(--miss); }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="title">Catch the Falling Object</div>
+      <div class="scoreboard">
+        <div class="score">Score: <span id="score">0</span></div>
+        <div class="misses">Miss: <span id="miss">0</span></div>
+        <div class="level">Level: <span id="level">1</span></div>
+      </div>
+    </div>
+
+    <div id="game" class="game" tabindex="0" aria-label="Game area">
+      <div id="basket" class="basket"></div>
+      <div class="ground"></div>
+      <div id="toast" class="toast">Nice catch!</div>
+    </div>
+
+    <div class="btns">
+      <button id="startBtn">Start</button>
+      <button id="pauseBtn">Pause</button>
+      <button id="resetBtn">Reset</button>
+    </div>
+  </div>
+
+  <script>
+    const game = document.getElementById('game');
+    const basket = document.getElementById('basket');
+    const scoreEl = document.getElementById('score');
+    const missEl = document.getElementById('miss');
+    const levelEl = document.getElementById('level');
+    const toast = document.getElementById('toast');
+    const startBtn = document.getElementById('startBtn');
+    const pauseBtn = document.getElementById('pauseBtn');
+    const resetBtn = document.getElementById('resetBtn');
+
+    const EMOJIS = ['🍎','🍌','🍇','🍒','🍊','🥝','🥭','🍓','💰','🪙'];
+    const COLORS = ['#22c55e','#f59e0b','#ef4444','#3b82f6','#a855f7','#14b8a6','#eab308','#10b981'];
+
+    let running = false;
+    let score = 0;
+    let miss = 0;
+    let level = 1;
+
+    let basketX = 120; // initial position
+    const speed = { fall: 2.2, spawnMs: 1200 };
+    const limits = { maxMiss: 10, maxLevel: 10 };
+    const objs = new Set();
+
+    function setBasket(x) {
+      const w = game.clientWidth;
+      const bw = basket.clientWidth;
+      basketX = Math.max(0, Math.min(w - bw, x));
+      basket.style.left = basketX + 'px';
+    }
+    setBasket(basketX);
+
+    // Controls: Arrow keys / A D / Mouse / Touch
+    function moveBasket(dx) { setBasket(basketX + dx); }
+
+    game.addEventListener('mousemove', (e) => {
+      const rect = game.getBoundingClientRect();
+      setBasket(e.clientX - rect.left - basket.clientWidth / 2);
+    });
+    game.addEventListener('touchmove', (e) => {
+      const rect = game.getBoundingClientRect();
+      const touch = e.touches[0];
+      setBasket(touch.clientX - rect.left - basket.clientWidth / 2);
+    }, { passive: true });
+
+    window.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowLeft' || e.key.toLowerCase() === 'a') moveBasket(-18);
+      if (e.key === 'ArrowRight' || e.key.toLowerCase() === 'd') moveBasket(18);
+      if (e.key.toLowerCase() === ' ') running ? pauseGame() : startGame();
+    });
+
+    function showToast(text, positive=true) {
+      toast.textContent = text;
+      toast.className = 'toast show ' + (positive ? 'positive' : 'negative');
+      clearTimeout(showToast._t);
+      showToast._t = setTimeout(() => toast.classList.remove('show'), 700);
+    }
+
+    function spawnObj() {
+      const obj = document.createElement('div');
+      obj.className = 'obj';
+      obj.style.left = Math.floor(Math.random() * (game.clientWidth - 36)) + 'px';
+      obj.style.background = COLORS[Math.floor(Math.random() * COLORS.length)];
+      obj.textContent = EMOJIS[Math.floor(Math.random() * EMOJIS.length)];
+      game.appendChild(obj);
+      objs.add(obj);
+      obj._y = -40;
+      obj._speed = speed.fall + Math.random() * (0.8 + level * 0.25);
+    }
+
+    function update() {
+      if (!running) return;
+      const gh = game.clientHeight;
+      const bw = basket.clientWidth;
+      const bh = basket.clientHeight;
+
+      for (const obj of [...objs]) {
+        obj._y += obj._speed;
+        obj.style.top = obj._y + 'px';
+
+        const ox = obj.offsetLeft, oy = obj._y;
+        const bx = basketX, by = gh - bh - 62;
+
+        const overlapX = ox + 36 >= bx && ox <= bx + bw;
+        const overlapY = oy + 36 >= by && oy <= by + bh + 12;
+
+        if (overlapX && overlapY) {
+          score += 1;
+          scoreEl.textContent = score;
+          showToast('+1 Nice catch!', true);
+          obj.remove(); objs.delete(obj);
+          maybeLevelUp();
+        } else if (oy > gh - 62) {
+          miss += 1;
+          missEl.textContent = miss;
+          showToast('Missed!', false);
+          obj.remove(); objs.delete(obj);
+          if (miss >= limits.maxMiss) endGame('Game Over — Try again!');
+        }
+      }
+      requestAnimationFrame(update);
+    }
+
+    function maybeLevelUp() {
+      const nextLevelScore = level * 10;
+      if (score > 0 && score % nextLevelScore === 0 && level < limits.maxLevel) {
+        level += 1; levelEl.textContent = level;
+        speed.spawnMs = Math.max(350, 1200 - level * 80);
+        showToast('Level Up! 🎉', true);
+        restartSpawner();
+      }
+    }
+
+    let spawner = null;
+    function startSpawner() {
+      stopSpawner();
+      spawner = setInterval(spawnObj, speed.spawnMs);
+    }
+    function stopSpawner() {
+      if (spawner) clearInterval(spawner);
+      spawner = null;
+    }
+    function restartSpawner() {
+      if (running) startSpawner();
+    }
+
+    function startGame() {
+      if (running) return;
+      running = true;
+      startSpawner();
+      showToast('Go!', true);
+      update();
+      game.focus();
+    }
+
+    function pauseGame() {
+      running = false;
+      stopSpawner();
+      showToast('Paused', false);
+    }
+
+    function resetGame() {
+      pauseGame();
+      for (const obj of objs) obj.remove();
+      objs.clear();
+      score = 0; miss = 0; level = 1;
+      scoreEl.textContent = score; missEl.textContent = miss; levelEl.textContent = level;
+      speed.spawnMs = 1200;
+      setBasket(game.clientWidth / 2 - basket.clientWidth / 2);
+    }
+
+    function endGame(message) {
+      pauseGame();
+      showToast(message, false);
+    }
+
+    startBtn.addEventListener('click', startGame);
+    pauseBtn.addEventListener('click', pauseGame);
+    resetBtn.addEventListener('click', resetGame);
+
+    // Responsive: recenter basket when window resizes
+    window.addEventListener('resize', () => {
+      setBasket(Math.min(basketX, game.clientWidth - basket.clientWidth));
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="gu">
+<head>
+  <meta charset="UTF-8" />
+  <title>Maze Escape - Canvas</title>
+  <style>
+    body { background:#0f172a; color:#e2e8f0; font-family:system-ui, sans-serif; display:flex; flex-direction:column; align-items:center; gap:12px; }
+    canvas { background:#111827; border:1px solid #334155; box-shadow:0 0 30px rgba(0,0,0,0.4) }
+    .panel { display:flex; gap:12px; align-items:center; }
+    .btn { padding:8px 12px; background:#1f2937; border:1px solid #374151; color:#e5e7eb; cursor:pointer; border-radius:6px; }
+    .btn:hover { background:#374151; }
+    .legend { font-size:14px; color:#94a3b8 }
+    .tag { font-weight:600; color:#22c55e }
+    .warn { color:#f59e0b }
+  </style>
+</head>
+<body>
+  <h2>Maze Escape</h2>
+  <div class="panel">
+    <button class="btn" id="regen">Regenerate maze</button>
+    <button class="btn" id="solve">Show BFS path (F)</button>
+    <span class="legend">Use Arrow keys. Exit = <span class="tag">green</span>. Walls = dark.</span>
+  </div>
+  <canvas id="maze" width="640" height="640"></canvas>
+
+  <script>
+    // Grid settings
+    const rows = 16, cols = 16;           // 16x16 grid (Diploma-friendly size)
+    const cellSize = 40;                  // 16 * 40 = 640 canvas
+    const canvas = document.getElementById('maze');
+    const ctx = canvas.getContext('2d');
+
+    // Maze representation: 0=empty, 1=wall
+    let maze = [];
+    let start = { r: 0, c: 0 };
+    let exit = { r: rows - 1, c: cols - 1 };
+    let player = { r: start.r, c: start.c };
+    let pathHighlight = []; // cells for BFS shortest path
+
+    // Utility: draw a cell
+    function drawCell(r, c, color) {
+      ctx.fillStyle = color;
+      ctx.fillRect(c * cellSize, r * cellSize, cellSize, cellSize);
+    }
+
+    // Draw grid with walls, player, exit, optional path
+    function drawMaze() {
+      // background
+      ctx.fillStyle = '#0b1020';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // cells
+      for (let r = 0; r < rows; r++) {
+        for (let c = 0; c < cols; c++) {
+          const val = maze[r][c];
+          const base = val === 1 ? '#0f172a' : '#1e293b';
+          drawCell(r, c, base);
+        }
+      }
+
+      // highlight BFS path if present
+      for (const { r, c } of pathHighlight) {
+        drawCell(r, c, '#334155'); // subtle highlight
+      }
+
+      // exit
+      drawCell(exit.r, exit.c, '#064e3b'); // green-ish
+      // start
+      drawCell(start.r, start.c, '#3b0764'); // purple-ish
+
+      // player
+      ctx.fillStyle = '#38bdf8';
+      const pad = 6;
+      ctx.fillRect(player.c * cellSize + pad, player.r * cellSize + pad, cellSize - 2 * pad, cellSize - 2 * pad);
+
+      // grid lines
+      ctx.strokeStyle = '#0f172a';
+      ctx.lineWidth = 1;
+      for (let r = 0; r <= rows; r++) {
+        ctx.beginPath(); ctx.moveTo(0, r * cellSize); ctx.lineTo(canvas.width, r * cellSize); ctx.stroke();
+      }
+      for (let c = 0; c <= cols; c++) {
+        ctx.beginPath(); ctx.moveTo(c * cellSize, 0); ctx.lineTo(c * cellSize, canvas.height); ctx.stroke();
+      }
+    }
+
+    // Generate maze using randomized DFS (recursive backtracking)
+    function generateMaze() {
+      // init full walls
+      maze = Array.from({ length: rows }, () => Array(cols).fill(1));
+
+      // carve cells using grid of "cells" connected by passages
+      const visited = Array.from({ length: rows }, () => Array(cols).fill(false));
+      const stack = [];
+      const dirs = [
+        { dr: -1, dc: 0 }, // up
+        { dr: 1, dc: 0 },  // down
+        { dr: 0, dc: -1 }, // left
+        { dr: 0, dc: 1 },  // right
+      ];
+
+      function inBounds(r, c) { return r >= 0 && r < rows && c >= 0 && c < cols; }
+
+      // choose random start to carve; keep our start at (0,0) open
+      let sr = 0, sc = 0;
+      visited[sr][sc] = true;
+      maze[sr][sc] = 0;
+      stack.push({ r: sr, c: sc });
+
+      while (stack.length) {
+        const current = stack[stack.length - 1];
+
+        // shuffle directions
+        const shuffled = dirs.map(d => ({ ...d, k: Math.random() })).sort((a, b) => a.k - b.k);
+
+        let moved = false;
+        for (const d of shuffled) {
+          const nr = current.r + d.dr;
+          const nc = current.c + d.dc;
+          if (inBounds(nr, nc) && !visited[nr][nc]) {
+            // carve passage
+            visited[nr][nc] = true;
+            maze[nr][nc] = 0;
+            stack.push({ r: nr, c: nc });
+            moved = true;
+            break;
+          }
+        }
+        if (!moved) stack.pop();
+      }
+
+      // ensure exit is open
+      maze[exit.r][exit.c] = 0;
+
+      // add some extra walls for challenge
+      for (let i = 0; i < rows * cols * 0.15; i++) {
+        const r = Math.floor(Math.random() * rows);
+        const c = Math.floor(Math.random() * cols);
+        if ((r !== start.r || c !== start.c) && (r !== exit.r || c !== exit.c)) {
+          maze[r][c] = Math.random() < 0.5 ? 1 : maze[r][c];
+        }
+      }
+
+      pathHighlight = [];
+      player = { r: start.r, c: start.c };
+      drawMaze();
+    }
+
+    // Movement
+    function canMove(r, c) {
+      return r >= 0 && r < rows && c >= 0 && c < cols && maze[r][c] === 0;
+    }
+    function move(dr, dc) {
+      const nr = player.r + dr;
+      const nc = player.c + dc;
+      if (canMove(nr, nc)) {
+        player.r = nr; player.c = nc;
+        pathHighlight = []; // clear path highlight on manual move
+        drawMaze();
+        checkWin();
+      }
+    }
+
+    // Win check
+    function checkWin() {
+      if (player.r === exit.r && player.c === exit.c) {
+        // simple toast
+        setTimeout(() => {
+          alert('You escaped! 🎉 Press "Regenerate maze" to play again.');
+        }, 50);
+      }
+    }
+
+    // BFS shortest path from player to exit
+    function bfsShortestPath() {
+      const queue = [];
+      const visited = Array.from({ length: rows }, () => Array(cols).fill(false));
+      const parent = Array.from({ length: rows }, () => Array(cols).fill(null));
+
+      queue.push({ r: player.r, c: player.c });
+      visited[player.r][player.c] = true;
+
+      const dirs = [
+        { dr: -1, dc: 0 }, { dr: 1, dc: 0 }, { dr: 0, dc: -1 }, { dr: 0, dc: 1 }
+      ];
+
+      while (queue.length) {
+        const { r, c } = queue.shift();
+        if (r === exit.r && c === exit.c) break;
+
+        for (const d of dirs) {
+          const nr = r + d.dr, nc = c + d.dc;
+          if (nr >= 0 && nr < rows && nc >= 0 && nc < cols && !visited[nr][nc] && maze[nr][nc] === 0) {
+            visited[nr][nc] = true;
+            parent[nr][nc] = { r, c };
+            queue.push({ r: nr, c: nc });
+          }
+        }
+      }
+
+      // reconstruct path
+      const path = [];
+      let cur = { r: exit.r, c: exit.c };
+      if (!parent[cur.r][cur.c]) {
+        pathHighlight = []; // no path
+        drawMaze();
+        return;
+      }
+      while (cur && !(cur.r === player.r && cur.c === player.c)) {
+        path.push(cur);
+        cur = parent[cur.r][cur.c];
+      }
+      pathHighlight = path.reverse();
+      drawMaze();
+    }
+
+    // Controls
+    window.addEventListener('keydown', (e) => {
+      switch (e.key) {
+        case 'ArrowUp':    move(-1, 0); break;
+        case 'ArrowDown':  move( 1, 0); break;
+        case 'ArrowLeft':  move( 0,-1); break;
+        case 'ArrowRight': move( 0, 1); break;
+        case 'f': case 'F': bfsShortestPath(); break;
+      }
+    });
+
+    document.getElementById('regen').addEventListener('click', generateMaze);
+    document.getElementById('solve').addEventListener('click', bfsShortestPath);
+
+    // Init
+    generateMaze();
+  </script>
+</body>
+</html>

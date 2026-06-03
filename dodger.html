@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Dodger — Simple HTML/JS Game</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    :root {
+      --bg: #0f1224;
+      --ui: #1b1f3b;
+      --player: #4caf50;
+      --danger: #e53935;
+      --star: #ffd54f;
+      --text: #e6e6e6;
+      --accent: #7c4dff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; font-family: system-ui, Segoe UI, Roboto, sans-serif;
+      background: linear-gradient(160deg, var(--bg), #121633 60%);
+      color: var(--text); display: grid; place-items: center; min-height: 100vh;
+    }
+    .wrap {
+      width: 960px; max-width: 96vw;
+    }
+    header {
+      padding: 16px 0 8px; text-align: center;
+    }
+    header h1 { margin: 0; font-size: 24px; letter-spacing: 0.5px; }
+    header p { margin: 6px 0 0; opacity: 0.8; }
+    .hud {
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px;
+      margin: 12px 0 8px;
+    }
+    .card {
+      background: rgba(27,31,59,0.7); border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 10px; padding: 10px; text-align: center;
+    }
+    .card b { color: var(--accent); }
+    canvas {
+      display: block; width: 100%; height: 540px; background: #0a0d1d;
+      border: 2px solid rgba(255,255,255,0.08); border-radius: 12px;
+      box-shadow: 0 8px 30px rgba(0,0,0,0.4), inset 0 0 80px rgba(124,77,255,0.09);
+    }
+    .footer {
+      margin-top: 10px; text-align: center; opacity: 0.8; font-size: 14px;
+    }
+    .btn {
+      display: inline-block; margin: 6px 4px; padding: 8px 12px;
+      background: var(--accent); color: white; border: none; border-radius: 8px;
+      cursor: pointer; font-weight: 600;
+      box-shadow: 0 4px 16px rgba(124,77,255,0.35);
+    }
+    .btn.secondary {
+      background: transparent; border: 1px solid rgba(255,255,255,0.2);
+      color: var(--text);
+    }
+    .overlay {
+      position: absolute; inset: 0; display: grid; place-items: center;
+      pointer-events: none;
+    }
+    .overlay .panel {
+      pointer-events: auto;
+      background: rgba(15,18,36,0.9); border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 12px; padding: 18px; text-align: center; width: 420px;
+      backdrop-filter: blur(6px);
+    }
+    .panel h2 { margin: 0 0 8px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>Dodger — Avoid enemies, collect stars</h1>
+      <p>Controls: Arrow keys or A/D to move. Space to restart. (Diploma-friendly)</p>
+    </header>
+
+    <div class="hud">
+      <div class="card"><b>Score</b><div id="score">0</div></div>
+      <div class="card"><b>Stars</b><div id="stars">0</div></div>
+      <div class="card"><b>Lives</b><div id="lives">3</div></div>
+      <div class="card">
+        <button class="btn" id="restartBtn" aria-label="Restart">Restart</button>
+        <button class="btn secondary" id="pauseBtn" aria-label="Pause">Pause</button>
+      </div>
+    </div>
+
+    <canvas id="game" width="960" height="540" aria-label="Game canvas"></canvas>
+
+    <div class="footer">Made with HTML Canvas + Vanilla JS. Customize colors, speed, and rules easily.</div>
+
+    <div class="overlay" id="overlay" hidden>
+      <div class="panel">
+        <h2 id="overlayTitle">Game Over</h2>
+        <p id="overlayText">Press Space or click Restart to play again.</p>
+        <button class="btn" id="overlayRestart">Restart</button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // --- Setup
+    const canvas = document.getElementById('game');
+    const ctx = canvas.getContext('2d');
+
+    const scoreEl = document.getElementById('score');
+    const starsEl = document.getElementById('stars');
+    const livesEl = document.getElementById('lives');
+    const overlay = document.getElementById('overlay');
+    const overlayTitle = document.getElementById('overlayTitle');
+    const overlayText = document.getElementById('overlayText');
+    const overlayRestart = document.getElementById('overlayRestart');
+    const restartBtn = document.getElementById('restartBtn');
+    const pauseBtn = document.getElementById('pauseBtn');
+
+    const W = canvas.width, H = canvas.height;
+
+    const state = {
+      running: true,
+      score: 0,
+      lives: 3,
+      stars: 0,
+      tick: 0,
+      speedScale: 1,
+      gameOver: false,
+    };
+
+    const player = {
+      x: W/2 - 20, y: H - 60, w: 40, h: 40,
+      color: getCSS('--player'), vx: 0, speed: 6
+    };
+
+    const enemies = [];
+    const stars = [];
+    const keys = new Set();
+
+    // --- Utils
+    function getCSS(name) {
+      return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+    }
+    function rand(min, max) { return Math.random() * (max - min) + min; }
+    function chance(p) { return Math.random() < p; }
+
+    function rectsOverlap(a, b) {
+      return !(
+        a.x + a.w < b.x ||
+        a.x > b.x + b.w ||
+        a.y + a.h < b.y ||
+        a.y > b.y + b.h
+      );
+    }
+
+    function clamp(v, min, max) { return Math.max(min, Math.min(max, v)); }
+
+    // --- Input
+    window.addEventListener('keydown', (e) => {
+      if (['ArrowLeft','ArrowRight','KeyA','KeyD'].includes(e.code)) {
+        keys.add(e.code);
+        e.preventDefault();
+      }
+      if (e.code === 'Space') {
+        if (state.gameOver) restart();
+        else togglePause();
+      }
+    });
+    window.addEventListener('keyup', (e) => {
+      keys.delete(e.code);
+    });
+
+    restartBtn.addEventListener('click', restart);
+    overlayRestart.addEventListener('click', restart);
+
+    pauseBtn.addEventListener('click', togglePause);
+
+    function togglePause() {
+      if (state.gameOver) return;
+      state.running = !state.running;
+      pauseBtn.textContent = state.running ? 'Pause' : 'Resume';
+    }
+
+    // --- Spawners
+    function spawnEnemy() {
+      const size = rand(24, 50);
+      enemies.push({
+        x: rand(0, W - size), y: -size, w: size, h: size,
+        vy: rand(2, 5) * state.speedScale,
+        color: getCSS('--danger'),
+      });
+    }
+
+    function spawnStar() {
+      const size = 22;
+      stars.push({
+        x: rand(0, W - size), y: -size, w: size, h: size,
+        vy: rand(2, 3.5) * state.speedScale,
+        color: getCSS('--star'),
+      });
+    }
+
+    // --- Game loop
+    let lastTime = performance.now();
+    function loop(now) {
+      const dt = Math.min(32, now - lastTime) / 16.67; // ~frames normalized
+      lastTime = now;
+
+      if (state.running) {
+        update(dt);
+        draw();
+      }
+      requestAnimationFrame(loop);
+    }
+
+    function update(dt) {
+      state.tick++;
+
+      // Difficulty scaling
+      if (state.tick % 600 === 0) {
+        state.speedScale = Math.min(2.0, state.speedScale + 0.1);
+      }
+
+      // Player input
+      const left = keys.has('ArrowLeft') || keys.has('KeyA');
+      const right = keys.has('ArrowRight') || keys.has('KeyD');
+      player.vx = (right - left) * player.speed;
+      player.x = clamp(player.x + player.vx * dt, 0, W - player.w);
+
+      // Spawn entities
+      if (chance(0.05)) spawnEnemy();
+      if (chance(0.025)) spawnStar();
+
+      // Move enemies and check collision
+      for (let i = enemies.length - 1; i >= 0; i--) {
+        const e = enemies[i];
+        e.y += e.vy * dt;
+        if (rectsOverlap(player, e)) {
+          enemies.splice(i, 1);
+          state.lives--;
+          flashOverlay('Hit!', 'Avoid red blocks. You lost 1 life.');
+          if (state.lives <= 0) endGame();
+        } else if (e.y > H + 60) {
+          enemies.splice(i, 1);
+          state.score += 1;
+        }
+      }
+
+      // Move stars and check pickup
+      for (let i = stars.length - 1; i >= 0; i--) {
+        const s = stars[i];
+        s.y += s.vy * dt;
+        if (rectsOverlap(player, s)) {
+          stars.splice(i, 1);
+          state.stars++;
+          state.score += 5;
+        } else if (s.y > H + 60) {
+          stars.splice(i, 1);
+        }
+      }
+
+      // UI updates
+      scoreEl.textContent = state.score;
+      starsEl.textContent = state.stars;
+      livesEl.textContent = state.lives;
+    }
+
+    function draw() {
+      // Clear
+      ctx.clearRect(0, 0, W, H);
+
+      // Background layers
+      ctx.fillStyle = '#0b0e20';
+      ctx.fillRect(0, 0, W, H);
+      drawGrid();
+
+      // Player
+      roundRect(ctx, player.x, player.y, player.w, player.h, 8, player.color);
+
+      // Enemies
+      enemies.forEach(e => {
+        roundRect(ctx, e.x, e.y, e.w, e.h, 8, e.color);
+      });
+
+      // Stars (draw as diamonds)
+      stars.forEach(s => {
+        ctx.save();
+        ctx.translate(s.x + s.w/2, s.y + s.h/2);
+        ctx.rotate(Math.PI / 4);
+        ctx.fillStyle = s.color;
+        ctx.fillRect(-s.w/2, -s.h/2, s.w, s.h);
+        ctx.restore();
+      });
+    }
+
+    function drawGrid() {
+      ctx.strokeStyle = 'rgba(124,77,255,0.08)';
+      ctx.lineWidth = 1;
+      for (let x = 0; x < W; x += 40) {
+        ctx.beginPath(); ctx.moveTo(x, 0); ctx.lineTo(x, H); ctx.stroke();
+      }
+      for (let y = 0; y < H; y += 40) {
+        ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+      }
+    }
+
+    function roundRect(ctx, x, y, w, h, r, fill) {
+      ctx.beginPath();
+      ctx.moveTo(x + r, y);
+      ctx.arcTo(x + w, y, x + w, y + h, r);
+      ctx.arcTo(x + w, y + h, x, y + h, r);
+      ctx.arcTo(x, y + h, x, y, r);
+      ctx.arcTo(x, y, x + w, y, r);
+      ctx.closePath();
+      ctx.fillStyle = fill;
+      ctx.fill();
+    }
+
+    function flashOverlay(title, text) {
+      overlayTitle.textContent = title;
+      overlayText.textContent = text;
+      overlay.hidden = false;
+      setTimeout(() => { overlay.hidden = true; }, 800);
+    }
+
+    function endGame() {
+      state.gameOver = true;
+      state.running = false;
+      overlayTitle.textContent = 'Game Over';
+      overlayText.textContent = 'Press Space or Restart to try again.';
+      overlay.hidden = false;
+    }
+
+    function restart() {
+      enemies.length = 0;
+      stars.length = 0;
+      state.score = 0;
+      state.stars = 0;
+      state.lives = 3;
+      state.tick = 0;
+      state.speedScale = 1;
+      state.running = true;
+      state.gameOver = false;
+      overlay.hidden = true;
+      pauseBtn.textContent = 'Pause';
+      player.x = W/2 - player.w/2;
+    }
+
+    // Start
+    requestAnimationFrame(loop);
+  </script>
+</body>
+</html>

@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="gu">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Math Quiz Game</title>
+  <style>
+    :root {
+      --bg: #0f1220;
+      --card: #161a2e;
+      --accent: #6cf;
+      --ok: #37d67a;
+      --bad: #ff6b6b;
+      --text: #e8ecf1;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, "Noto Sans", "Helvetica Neue", Arial, "Apple Color Emoji", "Segoe UI Emoji";
+      background: radial-gradient(1200px 600px at 20% 10%, #1a1f3a 0%, var(--bg) 60%, #0b0d18 100%);
+      color: var(--text);
+      display: grid; place-items: center; min-height: 100vh; padding: 24px;
+    }
+    .app {
+      width: 100%; max-width: 720px; background: linear-gradient(180deg, rgba(255,255,255,0.04), rgba(0,0,0,0.08));
+      border: 1px solid rgba(255,255,255,0.08);
+      backdrop-filter: blur(6px);
+      border-radius: 16px; padding: 20px;
+      box-shadow: 0 20px 40px rgba(0,0,0,0.35);
+    }
+    header {
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      border-bottom: 1px dashed rgba(255,255,255,0.15); padding-bottom: 12px; margin-bottom: 16px;
+    }
+    .title {
+      font-weight: 700; font-size: 20px; letter-spacing: 0.2px;
+    }
+    .score {
+      display: inline-flex; align-items: center; gap: 10px;
+      padding: 8px 12px; border-radius: 999px; background: #121528; border: 1px solid rgba(255,255,255,0.08);
+    }
+    .score .label { opacity: 0.8; font-size: 14px; }
+    .score .value { font-weight: 700; color: var(--accent); font-variant-numeric: tabular-nums; }
+    .problem {
+      display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 14px;
+      background: var(--card); border-radius: 14px; padding: 16px; border: 1px solid rgba(255,255,255,0.08);
+    }
+    .expr {
+      font-size: 28px; font-weight: 700; letter-spacing: 0.4px;
+    }
+    .controls {
+      display: grid; grid-template-columns: 1fr auto; gap: 10px; margin-top: 14px;
+    }
+    input[type="number"] {
+      padding: 12px 14px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.12);
+      background: #0e1224; color: var(--text); font-size: 16px;
+      outline: none; transition: border 120ms ease;
+    }
+    input[type="number"]:focus { border-color: var(--accent); }
+    button {
+      padding: 12px 16px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.14);
+      background: linear-gradient(180deg, #172041, #121a34); color: var(--text);
+      font-weight: 700; cursor: pointer; transition: transform 100ms ease, background 140ms ease;
+    }
+    button:hover { transform: translateY(-1px); background: linear-gradient(180deg, #213063, #121a34); }
+    .feedback {
+      margin-top: 10px; font-weight: 600;
+    }
+    .ok { color: var(--ok); }
+    .bad { color: var(--bad); }
+    .row {
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-top: 14px;
+    }
+    .pill {
+      padding: 8px 12px; border-radius: 999px; border: 1px solid rgba(255,255,255,0.12);
+      background: #0e1224; font-size: 13px; text-align: center; opacity: 0.9;
+    }
+    footer {
+      margin-top: 18px; font-size: 13px; opacity: 0.8;
+    }
+  </style>
+</head>
+<body>
+  <main class="app" role="main" aria-labelledby="title">
+    <header>
+      <div class="title" id="title">Math Quiz Game — ઉમેરો/બાદબાકી</div>
+      <div class="score" aria-live="polite">
+        <span class="label">સ્કોર</span>
+        <span class="value" id="score">0</span>
+      </div>
+    </header>
+
+    <section class="problem" aria-live="polite">
+      <div class="expr"><span id="a">0</span> <span id="op">+</span> <span id="b">0</span> = ?</div>
+      <button id="skipBtn" title="Skip question">Skip</button>
+    </section>
+
+    <section class="controls">
+      <input id="answer" type="number" inputmode="numeric" placeholder="તમારો જવાબ અહીં લખો" aria-label="Answer"/>
+      <button id="submitBtn">Submit</button>
+    </section>
+
+    <div class="feedback" id="feedback"></div>
+
+    <section class="row">
+      <div class="pill" id="streak">Streak: 0</div>
+      <div class="pill" id="total">Total Q: 0</div>
+      <div class="pill" id="accuracy">Accuracy: 0%</div>
+    </section>
+
+    <footer>
+      Random addition/subtraction પ્રશ્નો. સાચો જવાબ આપો → સ્કોર વધે. 👉 શીખશો random numbers + input checking.
+    </footer>
+  </main>
+
+  <script>
+    // Utility: get random integer in [min, max]
+    const randInt = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
+
+    // State
+    let score = 0;
+    let streak = 0;
+    let totalQ = 0;
+    let correctQ = 0;
+    let current = { a: 0, b: 0, op: "+" };
+
+    // Elements
+    const elA = document.getElementById("a");
+    const elB = document.getElementById("b");
+    const elOp = document.getElementById("op");
+    const elScore = document.getElementById("score");
+    const elAnswer = document.getElementById("answer");
+    const elSubmit = document.getElementById("submitBtn");
+    const elSkip = document.getElementById("skipBtn");
+    const elFeedback = document.getElementById("feedback");
+    const elStreak = document.getElementById("streak");
+    const elTotal = document.getElementById("total");
+    const elAccuracy = document.getElementById("accuracy");
+
+    // Generate a new question: random +/-, keep results simple and non-negative
+    function newQuestion() {
+      const a = randInt(0, 20);
+      const b = randInt(0, 20);
+      const op = Math.random() < 0.5 ? "+" : "-";
+
+      // Avoid negative answers for subtraction by swapping if needed
+      let A = a, B = b;
+      if (op === "-" && B > A) [A, B] = [B, A];
+
+      current = { a: A, b: B, op };
+      elA.textContent = A;
+      elB.textContent = B;
+      elOp.textContent = op;
+
+      // Clear UI
+      elAnswer.value = "";
+      elAnswer.focus();
+      elFeedback.textContent = "";
+    }
+
+    // Compute the correct result
+    function correctResult({ a, b, op }) {
+      return op === "+" ? a + b : a - b;
+    }
+
+    // Validate and check answer
+    function checkAnswer() {
+      const raw = elAnswer.value.trim();
+
+      // Input checking
+      if (raw === "") {
+        elFeedback.textContent = "કૃપા કરીને જવાબ લખો.";
+        elFeedback.className = "feedback bad";
+        elAnswer.focus();
+        return;
+      }
+
+      // Parse integer safely
+      const userVal = Number(raw);
+      if (!Number.isFinite(userVal)) {
+        elFeedback.textContent = "માન્ય નંબર લખો.";
+        elFeedback.className = "feedback bad";
+        return;
+      }
+
+      totalQ += 1;
+      const correct = correctResult(current);
+
+      // Compare
+      if (userVal === correct) {
+        score += 1;
+        streak += 1;
+        correctQ += 1;
+        elFeedback.textContent = "સાચો જવાબ! 🎯";
+        elFeedback.className = "feedback ok";
+      } else {
+        streak = 0;
+        elFeedback.textContent = `ખોટો જવાબ. સાચો: ${correct}`;
+        elFeedback.className = "feedback bad";
+      }
+
+      // Update HUD
+      elScore.textContent = score;
+      elStreak.textContent = `Streak: ${streak}`;
+      elTotal.textContent = `Total Q: ${totalQ}`;
+      const acc = totalQ ? Math.round((correctQ / totalQ) * 100) : 0;
+      elAccuracy.textContent = `Accuracy: ${acc}%`;
+
+      // Next question after short pause
+      setTimeout(newQuestion, 700);
+    }
+
+    // Skip handler (doesn't change score, breaks streak)
+    function skipQuestion() {
+      streak = 0;
+      elStreak.textContent = `Streak: ${streak}`;
+      elFeedback.textContent = "Skipped. Next પ્રશ્ન...";
+      elFeedback.className = "feedback";
+      setTimeout(newQuestion, 400);
+    }
+
+    // Keyboard: Enter submits
+    elAnswer.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") checkAnswer();
+    });
+
+    // Button events
+    elSubmit.addEventListener("click", checkAnswer);
+    elSkip.addEventListener("click", skipQuestion);
+
+    // Init
+    newQuestion();
+  </script>
+</body>
+</html>
